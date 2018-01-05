@@ -63,9 +63,10 @@ class Repo(db: Database) {
       MinimaxTTT.minimax(boardSeq, aiPlayer, huPlayer, aiPlayer)
     val boardStr = move(0) concat move(1) concat move(2) concat move(3) concat move(4) concat move(5) concat move(6) concat move(7) concat move(8)
     val avail = move.filter(a => { a != "O" && a != "X" })
+    val newBoard = "012345678"
     val newGame = if (winning(move,aiPlayer)) {
       Games(id,
-            boardStr,
+            newBoard,
             huPlayer,
             aiPlayer,
             oldGame.botWins + 1,
@@ -73,7 +74,7 @@ class Repo(db: Database) {
             oldGame.totalGames + 1)
     } else if (winning(move,huPlayer)) {
       Games(id,
-            boardStr,
+            newBoard,
             huPlayer,
             aiPlayer,
             oldGame.botWins,
@@ -81,7 +82,7 @@ class Repo(db: Database) {
             oldGame.totalGames + 1)
     } else if (avail.isEmpty) {
       Games(id,
-            boardStr,
+            newBoard,
             huPlayer,
             aiPlayer,
             oldGame.botWins,
@@ -102,6 +103,7 @@ class Repo(db: Database) {
     val oldGame: Games = Await
       .result(db.run(gameTableQuery.filter(_.id === id).result), Duration.Inf)
       .head
+    val newBoard = "012345678"
     val huPlayer = oldGame.userChar
     val aiPlayer = oldGame.botChar
     val boardSeq = ArrayBuffer(
@@ -116,10 +118,10 @@ class Repo(db: Database) {
       board(8).toString
     )
     val availSpots = boardSeq.filter(a => a != "O" && a != "X").toList
-    val newGame = if (availSpots.isEmpty) {
+    val newGame =
       if (MinimaxTTT.winning(boardSeq, huPlayer))
         Games(id,
-              board,
+              newBoard,
               huPlayer,
               aiPlayer,
               oldGame.botWins,
@@ -127,22 +129,22 @@ class Repo(db: Database) {
               oldGame.totalGames + 1)
       else if (MinimaxTTT.winning(boardSeq, aiPlayer))
         Games(id,
-              board,
+              newBoard,
               huPlayer,
               aiPlayer,
               oldGame.botWins + 1,
               oldGame.userWins,
               oldGame.totalGames + 1)
-      else
+      else if (availSpots.isEmpty)
         Games(id,
-              board,
+              newBoard,
               huPlayer,
               aiPlayer,
               oldGame.botWins,
               oldGame.userWins,
               oldGame.totalGames + 1)
 
-    } else {
+     else {
       Games(id,
             board,
             huPlayer,
@@ -155,5 +157,8 @@ class Repo(db: Database) {
   }
   def getGame(id:Long): Future[Games] = {
     db.run(gameTableQuery.filter(_.id === id).result.head)
+  }
+  def setGame(games: Games) = {
+    db.run(gameTableQuery.filter(_.id === games.id).update(games))
   }
 }

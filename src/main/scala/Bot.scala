@@ -1,3 +1,4 @@
+import akka.actor.{Actor, Props}
 import info.mukel.telegrambot4s._
 import info.mukel.telegrambot4s.Implicits._
 import info.mukel.telegrambot4s.api._
@@ -18,7 +19,7 @@ object Bot
     with Polling
     with Commands
     with InlineQueries
-    with Callbacks {
+    with Callbacks{
   // Use 'def' or 'lazy val' for the token, using a plain 'val' may/will
   // lead to initialization order issues.
   // Fetch the token from an environment variable or untracked file.
@@ -31,22 +32,33 @@ object Bot
     .getOrElse(Source.fromFile("bot.token").getLines().mkString)
 
   def displayBoard(board: ArrayBuffer[String]): String = {
-    def getChar(s: String) = {
-      if (s != "O" && s != "X") "."
-      else s
+    def getChar(s: String, id: Int) = {
+      if (id % 3 == 0) {
+        if (s != "O" && s != "X") ".  "
+        else s"$s "
+      } else if (id == 2 && id == 5 && id == 8) {
+        if (s != "O" && s != "X") "  ."
+        else s" $s"
+      } else {
+        if (s != "O" && s != "X") "  .  "
+        else s" $s "
+      }
     }
-    getChar(board(0)) concat " " concat getChar(board(1)) concat " " concat getChar(
-      board(2)) concat
-      "\n" concat getChar(board(3)) concat " " concat getChar(board(4)) concat " " concat getChar(
-      board(5)) concat
-      "\n" concat getChar(board(6)) concat " " concat getChar(board(7)) concat " " concat getChar(
-      board(8))
-
+    getChar(board(0), 0) concat " " concat getChar(board(1), 1) concat " " concat getChar(
+      board(2),
+      2) concat
+      "\n" concat getChar(board(3), 3) concat " " concat getChar(board(4), 4) concat " " concat getChar(
+      board(5),
+      5) concat
+      "\n" concat getChar(board(6), 6) concat " " concat getChar(board(7), 7) concat " " concat getChar(
+      board(8),
+      8)
+    "Game board:"
   }
   def makeNewKeyboard(board: ArrayBuffer[String]): InlineKeyboardMarkup = {
     def getChar(s: String) = {
-      if (s != "O" && s != "X") "."
-      else s
+      if (s != "O" && s != "X") "  .  "
+      else s"  $s  "
 
     }
     InlineKeyboardMarkup(
@@ -69,13 +81,7 @@ object Bot
       ))
   }
 
-  onCommand('hello) { implicit msg =>
-    reply("My token is SAFE!")
-  }
-
   onCallbackQuery { implicit cbq =>
-    //SendMessage(ChatId(cbq.message.get.chat.),text="a")
-    println(cbq.message.get.chat.username.get)
     if (cbq.data.isDefined) {
       val data: String = cbq.data.get
       val command = data.split(" ").head
@@ -103,21 +109,157 @@ object Bot
             7) concat boardSeq(8)
           repo.huMove(newBoard, cbq.from.id).onComplete { _ =>
             {
-              request(EditMessageText(ChatId(cbq.message.get.chat.id),
-                cbq.message.get.messageId,
-                text = displayBoard(boardSeq),
-                replyMarkup = makeNewKeyboard(boardSeq)))
+              request(
+                EditMessageText(ChatId(cbq.message.get.chat.id),
+                                cbq.message.get.messageId,
+                                text = displayBoard(boardSeq),
+                                replyMarkup = makeNewKeyboard(boardSeq)))
               val availSpots = boardSeq.filter(a => a != "O" && a != "X").toList
-//              if (availSpots.isEmpty) {
-                if (MinimaxTTT.winning(boardSeq, currentGame.userChar)) {
-                  ackCallback("You win!", showAlert = true)
-                } else if (MinimaxTTT.winning(boardSeq, currentGame.botChar)) {
-                  ackCallback("You lose!", showAlert = true)
-                } else if (availSpots.isEmpty) ackCallback("DRAW!", showAlert = true)
-                //TODO:Start new game
-               else {
+
+              if (MinimaxTTT.winning(boardSeq, currentGame.userChar)) {
+                val board =
+                  ArrayBuffer[String]("0",
+                                      "1",
+                                      "2",
+                                      "3",
+                                      "4",
+                                      "5",
+                                      "6",
+                                      "7",
+                                      "8")
+                request(
+                  EditMessageText(ChatId(cbq.message.get.chat.id),
+                                  cbq.message.get.messageId,
+                                  text = "Game is over, you win!")).onComplete {
+                  case _ =>
+                    if (currentGame.userChar == "X") {
+                      request(
+                        SendMessage(ChatId(cbq.message.get.chat.id),
+                                    text = displayBoard(board),
+                                    replyMarkup = makeNewKeyboard(board)))
+                    } else {
+                      repo.aiMove(cbq.from.id).onComplete { _ =>
+                        val newGame =
+                          Await.result(repo.getGame(cbq.from.id), Duration.Inf)
+                        val newBoardSeq = ArrayBuffer(
+                          newGame.gameBoard(0).toString,
+                          newGame.gameBoard(1).toString,
+                          newGame.gameBoard(2).toString,
+                          newGame.gameBoard(3).toString,
+                          newGame.gameBoard(4).toString,
+                          newGame.gameBoard(5).toString,
+                          newGame.gameBoard(6).toString,
+                          newGame.gameBoard(7).toString,
+                          newGame.gameBoard(8).toString
+                        )
+                        request(
+                          SendMessage(
+                            ChatId(cbq.message.get.chat.id),
+                            text = displayBoard(newBoardSeq),
+                            replyMarkup = makeNewKeyboard(newBoardSeq)))
+                      }
+                    }
+                    ackCallback("You win!", showAlert = true)
+                }
+              } else if (MinimaxTTT.winning(boardSeq, currentGame.botChar)) {
+                val board =
+                  ArrayBuffer[String]("0",
+                                      "1",
+                                      "2",
+                                      "3",
+                                      "4",
+                                      "5",
+                                      "6",
+                                      "7",
+                                      "8")
+                request(
+                  EditMessageText(ChatId(cbq.message.get.chat.id),
+                                  cbq.message.get.messageId,
+                                  text = "Game is over, you lose!"))
+                  .onComplete {
+                    case _ =>
+                      if (currentGame.userChar == "X") {
+                        request(
+                          SendMessage(ChatId(cbq.message.get.chat.id),
+                                      text = displayBoard(board),
+                                      replyMarkup = makeNewKeyboard(board)))
+                      } else {
+                        repo.aiMove(cbq.from.id).onComplete { _ =>
+                          val newGame =
+                            Await.result(repo.getGame(cbq.from.id),
+                                         Duration.Inf)
+                          val newBoardSeq = ArrayBuffer(
+                            newGame.gameBoard(0).toString,
+                            newGame.gameBoard(1).toString,
+                            newGame.gameBoard(2).toString,
+                            newGame.gameBoard(3).toString,
+                            newGame.gameBoard(4).toString,
+                            newGame.gameBoard(5).toString,
+                            newGame.gameBoard(6).toString,
+                            newGame.gameBoard(7).toString,
+                            newGame.gameBoard(8).toString
+                          )
+                          request(
+                            SendMessage(ChatId(cbq.message.get.chat.id),
+                                        text = displayBoard(newBoardSeq),
+                                        replyMarkup =
+                                          makeNewKeyboard(newBoardSeq)))
+                        }
+                      }
+                      ackCallback("You lose!", showAlert = true)
+                  }
+              } else if (availSpots.isEmpty) {
+                val board =
+                  ArrayBuffer[String]("0",
+                                      "1",
+                                      "2",
+                                      "3",
+                                      "4",
+                                      "5",
+                                      "6",
+                                      "7",
+                                      "8")
+                request(
+                  EditMessageText(ChatId(cbq.message.get.chat.id),
+                                  cbq.message.get.messageId,
+                                  text = "Game is over, draw!")).onComplete {
+                  case _ =>
+                    if (currentGame.userChar == "X") {
+                      request(
+                        SendMessage(ChatId(cbq.message.get.chat.id),
+                                    text = displayBoard(board),
+                                    replyMarkup = makeNewKeyboard(board)))
+                    } else {
+                      repo.aiMove(cbq.from.id).onComplete { _ =>
+                        val newGame =
+                          Await.result(repo.getGame(cbq.from.id), Duration.Inf)
+                        val newBoardSeq = ArrayBuffer(
+                          newGame.gameBoard(0).toString,
+                          newGame.gameBoard(1).toString,
+                          newGame.gameBoard(2).toString,
+                          newGame.gameBoard(3).toString,
+                          newGame.gameBoard(4).toString,
+                          newGame.gameBoard(5).toString,
+                          newGame.gameBoard(6).toString,
+                          newGame.gameBoard(7).toString,
+                          newGame.gameBoard(8).toString
+                        )
+                        request(
+                          SendMessage(
+                            ChatId(cbq.message.get.chat.id),
+                            text = displayBoard(newBoardSeq),
+                            replyMarkup = makeNewKeyboard(newBoardSeq)))
+                      }
+                    }
+                    ackCallback("Draw!", showAlert = true)
+                }
+              }
+              else {
+                val beforePosWinGame =
+                  Await.result(repo.getGame(cbq.from.id), Duration.Inf)
                 repo.aiMove(cbq.from.id).onComplete { _ =>
-                  val newGame = Await.result(repo.getGame(cbq.from.id), Duration.Inf)
+                  val newGame =
+                    Await.result(repo.getGame(cbq.from.id), Duration.Inf)
                   val newBoardSeq = ArrayBuffer(
                     newGame.gameBoard(0).toString,
                     newGame.gameBoard(1).toString,
@@ -129,50 +271,271 @@ object Bot
                     newGame.gameBoard(7).toString,
                     newGame.gameBoard(8).toString
                   )
-                  request(EditMessageText(ChatId(cbq.message.get.chat.id),
-                                  cbq.message.get.messageId,
-                                  text = displayBoard(newBoardSeq),
-                                  replyMarkup = makeNewKeyboard(newBoardSeq)))
-                  val availSpots = newBoardSeq.filter(a => a != "O" && a != "X").toList
-                  //              if (availSpots.isEmpty) {
-                  if (MinimaxTTT.winning(newBoardSeq, currentGame.userChar)) {
-                    ackCallback("You win!", showAlert = true)
-                  } else if (MinimaxTTT.winning(newBoardSeq, currentGame.botChar)) {
-                    ackCallback("You lose!", showAlert = true)
-                  } else if (availSpots.isEmpty) ackCallback("DRAW!", showAlert = true)
-                  //TODO:Start new game
+                  request(
+                    EditMessageText(ChatId(cbq.message.get.chat.id),
+                                    cbq.message.get.messageId,
+                                    text = displayBoard(newBoardSeq),
+                                    replyMarkup = makeNewKeyboard(newBoardSeq)))
+
+                  if (beforePosWinGame.totalGames < newGame.totalGames) {
+                    if (beforePosWinGame.userWins < newGame.userWins) {
+                      val board =
+                        ArrayBuffer[String]("0",
+                                            "1",
+                                            "2",
+                                            "3",
+                                            "4",
+                                            "5",
+                                            "6",
+                                            "7",
+                                            "8")
+                      request(
+                        EditMessageText(ChatId(cbq.message.get.chat.id),
+                                        cbq.message.get.messageId,
+                                        text = "Game is over, you win!"))
+                        .onComplete {
+                          case _ =>
+                            if (newGame.userChar == "X") {
+                              request(
+                                SendMessage(ChatId(cbq.message.get.chat.id),
+                                  text = displayBoard(board),
+                                  replyMarkup = makeNewKeyboard(board)))
+                            } else {
+                              repo.aiMove(cbq.from.id).onComplete { _ =>
+                                val newGame =
+                                  Await.result(repo.getGame(cbq.from.id), Duration.Inf)
+                                val newBoardSeq = ArrayBuffer(
+                                  newGame.gameBoard(0).toString,
+                                  newGame.gameBoard(1).toString,
+                                  newGame.gameBoard(2).toString,
+                                  newGame.gameBoard(3).toString,
+                                  newGame.gameBoard(4).toString,
+                                  newGame.gameBoard(5).toString,
+                                  newGame.gameBoard(6).toString,
+                                  newGame.gameBoard(7).toString,
+                                  newGame.gameBoard(8).toString
+                                )
+                                request(
+                                  SendMessage(
+                                    ChatId(cbq.message.get.chat.id),
+                                    text = displayBoard(newBoardSeq),
+                                    replyMarkup = makeNewKeyboard(newBoardSeq)))
+                              }
+                            }
+                            ackCallback("You win!", showAlert = true)
+                        }
+                    } else if (beforePosWinGame.botWins < newGame.botWins) {
+                      val board =
+                        ArrayBuffer[String]("0",
+                                            "1",
+                                            "2",
+                                            "3",
+                                            "4",
+                                            "5",
+                                            "6",
+                                            "7",
+                                            "8")
+                      request(
+                        EditMessageText(ChatId(cbq.message.get.chat.id),
+                                        cbq.message.get.messageId,
+                                        text = "Game is over, you lose!"))
+                        .onComplete {
+                          case _ =>
+                            if (newGame.userChar == "X") {
+                              request(
+                                SendMessage(ChatId(cbq.message.get.chat.id),
+                                  text = displayBoard(board),
+                                  replyMarkup = makeNewKeyboard(board)))
+                            } else {
+                              repo.aiMove(cbq.from.id).onComplete { _ =>
+                                val newGame =
+                                  Await.result(repo.getGame(cbq.from.id), Duration.Inf)
+                                val newBoardSeq = ArrayBuffer(
+                                  newGame.gameBoard(0).toString,
+                                  newGame.gameBoard(1).toString,
+                                  newGame.gameBoard(2).toString,
+                                  newGame.gameBoard(3).toString,
+                                  newGame.gameBoard(4).toString,
+                                  newGame.gameBoard(5).toString,
+                                  newGame.gameBoard(6).toString,
+                                  newGame.gameBoard(7).toString,
+                                  newGame.gameBoard(8).toString
+                                )
+                                request(
+                                  SendMessage(
+                                    ChatId(cbq.message.get.chat.id),
+                                    text = displayBoard(newBoardSeq),
+                                    replyMarkup = makeNewKeyboard(newBoardSeq)))
+                              }
+                            }
+                            ackCallback("You lose!", showAlert = true)
+                        }
+                    } else  {
+                      val board =
+                        ArrayBuffer[String]("0",
+                                            "1",
+                                            "2",
+                                            "3",
+                                            "4",
+                                            "5",
+                                            "6",
+                                            "7",
+                                            "8")
+                      request(
+                        EditMessageText(ChatId(cbq.message.get.chat.id),
+                                        cbq.message.get.messageId,
+                                        text = "Game is over, draw!"))
+                        .onComplete {
+                          case _ =>
+                            if (newGame.userChar == "X") {
+                              request(
+                                SendMessage(ChatId(cbq.message.get.chat.id),
+                                  text = displayBoard(board),
+                                  replyMarkup = makeNewKeyboard(board)))
+                            } else {
+                              repo.aiMove(cbq.from.id).onComplete { _ =>
+                                val newGame =
+                                  Await.result(repo.getGame(cbq.from.id), Duration.Inf)
+                                val newBoardSeq = ArrayBuffer(
+                                  newGame.gameBoard(0).toString,
+                                  newGame.gameBoard(1).toString,
+                                  newGame.gameBoard(2).toString,
+                                  newGame.gameBoard(3).toString,
+                                  newGame.gameBoard(4).toString,
+                                  newGame.gameBoard(5).toString,
+                                  newGame.gameBoard(6).toString,
+                                  newGame.gameBoard(7).toString,
+                                  newGame.gameBoard(8).toString
+                                )
+                                request(
+                                  SendMessage(
+                                    ChatId(cbq.message.get.chat.id),
+                                    text = displayBoard(newBoardSeq),
+                                    replyMarkup = makeNewKeyboard(newBoardSeq)))
+                              }
+                            }
+                            ackCallback("Draw!", showAlert = true)
+                        }
+                    }
+                  }
                 }
               }
             }
           }
 
         } else ackCallback("Choose another field", showAlert = true)
-        //ackCallback(command + moveRow + moveCol, showAlert = true) //тест команд
+
       }
     } else {
       ackCallback("Bad callback. Please, report @kromuch")
     }
   }
-  val ikb = InlineKeyboardMarkup.singleButton(
-    InlineKeyboardButton.callbackData("text", "cdb"))
-  def lmgtfyBtn(query: String): InlineKeyboardMarkup = ikb
-  def printt(s: String): String = {
-    println(s)
-    s
-  }
   onCommand('help) { implicit msg =>
-    reply( //TODO:ДОПИСАТИ ДОВІДКУ
+    reply(
       s"""Tic-Tac-Toe
+         |
+         |Available commands:
          |
          |/help - list commands
          |
-         |/lmgtfy2 | /btn args - clickable button
+         |/start - reset game stats and start new game
          |
-         |@Bot args - Inline mode
-      """.stripMargin,
-      parseMode = ParseMode.Markdown
+         |/stats - game stats
+         |
+         |/set_x - set your char to X
+         |
+         |/set_o - set your char to O
+      """.stripMargin
     )
   }
+  onCommand('stats) { implicit msg =>
+    val game = Await.result(repo.getGame(msg.from.get.id), Duration.Inf)
+    reply(
+      s"""
+         |Your wins: ${game.userWins}
+         |Bot wins: ${game.botWins}
+         |Draws: ${game.totalGames - game.botWins - game.userWins}
+         |TotalGames: ${game.totalGames}
+       """.stripMargin
+    )
+  }
+  onCommand('set_x) { implicit msg =>
+    val emptyUser = User(0, isBot = false, "")
+    val currentGame =
+      Await.result(repo.getGame(msg.from.getOrElse(emptyUser).id), Duration.Inf)
+    val currentChar = currentGame.userChar
+    val board = "012345678"
+    if (!(currentChar == "X")) {
+       val newGame = Games(
+          msg.from.getOrElse(emptyUser).id,
+          board,
+          "X",
+          "O",
+          currentGame.botWins,
+          currentGame.userWins,
+          currentGame.totalGames
+        )
+        repo.setGame(newGame).onComplete { _ =>
+            val newBoardSeq = ArrayBuffer(
+              newGame.gameBoard(0).toString,
+              newGame.gameBoard(1).toString,
+              newGame.gameBoard(2).toString,
+              newGame.gameBoard(3).toString,
+              newGame.gameBoard(4).toString,
+              newGame.gameBoard(5).toString,
+              newGame.gameBoard(6).toString,
+              newGame.gameBoard(7).toString,
+              newGame.gameBoard(8).toString
+            )
+            request(
+              SendMessage(ChatId(msg.chat.id),
+                          text = displayBoard(newBoardSeq),
+                          replyMarkup = makeNewKeyboard(newBoardSeq)))
+        }
+    }
+  }
+  ////////////////////////////////////////////////////////////////////////////////////////
+  onCommand('set_o) { implicit msg =>
+    val emptyUser = User(0, isBot = false, "")
+    val currentGame =
+      Await.result(repo.getGame(msg.from.getOrElse(emptyUser).id), Duration.Inf)
+    val currentChar = currentGame.userChar
+    val board = "012345678"
+    if (!(currentChar == "O")) {
+      val newGame = Games(
+        msg.from.getOrElse(emptyUser).id,
+        board,
+        "O",
+        "X",
+        currentGame.botWins,
+        currentGame.userWins,
+        currentGame.totalGames
+      )
+      repo.setGame(newGame).onComplete { _ =>
+          repo.aiMove(msg.from.getOrElse(emptyUser).id).onComplete { _ =>
+            val newGame =
+              Await.result(repo.getGame(msg.from.getOrElse(emptyUser).id),
+                Duration.Inf)
+            val newBoardSeq = ArrayBuffer(
+              newGame.gameBoard(0).toString,
+              newGame.gameBoard(1).toString,
+              newGame.gameBoard(2).toString,
+              newGame.gameBoard(3).toString,
+              newGame.gameBoard(4).toString,
+              newGame.gameBoard(5).toString,
+              newGame.gameBoard(6).toString,
+              newGame.gameBoard(7).toString,
+              newGame.gameBoard(8).toString
+            )
+            request(
+              SendMessage(ChatId(msg.chat.id),
+                text = displayBoard(newBoardSeq),
+                replyMarkup = makeNewKeyboard(newBoardSeq)))
+          }
+      }
+    }
+  }
+
   onCommand('start) { implicit msg =>
     val emptyBoard = "012345678"
     val emptyUser = User(0, isBot = false, "")
@@ -180,15 +543,23 @@ object Bot
       Games(msg.from.getOrElse(emptyUser).id, emptyBoard, "X", "O", 0, 0, 0)
     repo.startCommand(emptyGame).onComplete {
       case util.Success(_) =>
-        reply( //TODO:ДОПИСАТИ ДОВІДКУ
+        reply(
           s"""Welcome to Tic-Tac-Toe
              |
-         |Available commands:
+             |Available commands:
              |
-         |/help - list commands
+             |/help - list commands
              |
-      """.stripMargin,
-          parseMode = ParseMode.Markdown
+             |/start - reset game stats and start new game
+             |
+             |/stats - game stats
+             |
+             |/set_x - set your char to X
+             |
+             |/set_o - set your char to O
+             |
+             |Your char is "X"
+      """.stripMargin
         ).onComplete {
           case util.Success(_) => {
             val keyboard = InlineKeyboardMarkup(

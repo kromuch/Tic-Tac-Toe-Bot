@@ -1,3 +1,4 @@
+import akka.actor.ActorSystem
 import slick.jdbc.PostgresProfile.api._
 
 import scala.concurrent.Await
@@ -10,6 +11,8 @@ object Main {
 //    )
     //init(db)
     Bot.run()
+//    val actorSystem = ActorSystem("bot-actor-system")
+//    actorSystem.actorOf(Bot.props(),"bot-actor")
   }
   def init(db:Database):Unit = {
     Await.result(db.run(GameTable.table.schema.create),Duration.Inf)

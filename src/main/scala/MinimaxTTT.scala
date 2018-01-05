@@ -5,9 +5,8 @@ object MinimaxTTT {
               player: String,
               huPlayer: String,
               aiPlayer: String): ArrayBuffer[String] = {
-    println(" 000 " + board)
     def in(board: ArrayBuffer[String],
-           player: String): Int = {
+           player: String,depth:Int): Int = {
       val invertPlayer = {
         if (player == "X") "O"
         else "X"
@@ -31,11 +30,11 @@ object MinimaxTTT {
             board(8)
           )
           temp(value.toInt) = player
-          in(temp,invertPlayer)
+          in(temp,invertPlayer,depth+1)
         }}
       }
-      else if (winning(board,aiPlayer)) 10
-      else if (winning(board,huPlayer)) -10
+      else if (winning(board,aiPlayer)) 10*(9-depth)
+      else if (winning(board,huPlayer)) -10*(9-depth)
       else 0
 //      if (winning(board, aiPlayer)) return (10+depth, 0)
 //      else if (winning(board, huPlayer)) return (-10+depth, 0)
@@ -89,7 +88,7 @@ object MinimaxTTT {
           board(8)
         )
         newBoard(availSpots(i).toInt) = player
-        val score = in(newBoard, huPlayer)
+        val score = in(newBoard, huPlayer,0)
         //moves += (availSpots(i) concat " " concat score.toString)
         if (i == 0) {
           maxScore = score
@@ -103,21 +102,13 @@ object MinimaxTTT {
       }
       //bestMove = in(board, player).toString
       val temp1 = board
-      println("1")
-      println(board)
       temp1(bestMove.toInt) = player
-      println(temp1)
       temp1
-      //TODO:Знайти максимум і зробити хід, врахувати те, що може бути одна комірка вільна (>1), тоді тупо її зайняти і все
     } else {
       val temp = board
-      println("2")
-      println(board)
       val freeIndex = availSpots.head.toInt
       temp(freeIndex) = player
-      println(temp)
       temp
-      //TODO:якимось чином передане розв'язане поле
     }
 //    if (winning(board, huPlayer)) return (ArrayBuffer[String](), -10)
 //    else if (winning(board, aiPlayer)) return (ArrayBuffer[String](), 10)
